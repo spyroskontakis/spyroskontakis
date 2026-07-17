@@ -4,7 +4,6 @@ import argparse
 from collections import deque
 from dataclasses import dataclass
 from html import escape
-from math import hypot
 from pathlib import Path
 
 
@@ -13,48 +12,51 @@ ASSETS = ROOT / "assets"
 PORTRAIT_SOURCE = ASSETS / "portrait_ascii.txt"
 
 CARD_WIDTH = 1500
-CARD_HEIGHT = 700
-DIVIDER_X = 640
-TEXT_X = 682
+CARD_HEIGHT = 740
+CARD_PADDING = 34
+INNER_MARGIN = 14
+
+PORTRAIT_FONT_SIZE = 10
+PORTRAIT_SCALE_X = 0.315
+PORTRAIT_SCALE_Y = 0.525
+PORTRAIT_CHAR_ADVANCE = PORTRAIT_FONT_SIZE * 0.6
+PORTRAIT_VISIBLE_COLUMNS = 274
+PORTRAIT_WIDTH = round(
+    PORTRAIT_VISIBLE_COLUMNS * PORTRAIT_CHAR_ADVANCE * PORTRAIT_SCALE_X
+)
+PORTRAIT_HEIGHT = round((8 + 161 * 7.5) * PORTRAIT_SCALE_Y)
+PORTRAIT_X = CARD_PADDING
+PORTRAIT_Y = round((CARD_HEIGHT - PORTRAIT_HEIGHT) / 2)
+CONTENT_GAP = 36
+TEXT_X = PORTRAIT_X + PORTRAIT_WIDTH + CONTENT_GAP
 
 FONT_STACK = (
     'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, '
     '"Liberation Mono", monospace'
 )
-PORTRAIT_FONT_SIZE = 10
-BODY_FONT_SIZE = 16.5
-HEADING_FONT_SIZE = 17.5
-BODY_LINE_HEIGHT = 1.64
+LABEL_FONT_SIZE = 20.5
+BODY_FONT_SIZE = 22
+HEADING_FONT_SIZE = 23.5
+BODY_LINE_HEIGHT = 1.545
+LABEL_SEPARATOR_X = 142
+VALUE_X = 170
+PANEL_TOP = 60
 
 PORTRAIT_DENSITY_RAMP = "@%#*+=-:. "
 DARK_PORTRAIT_PALETTE = (
-    "#484f58",
-    "#6e7681",
-    "#8c959f",
-    "#a6b0bb",
-    "#c1c9d2",
-    "#d8dee4",
+    "#59636e",
+    "#6e7883",
+    "#87919c",
+    "#a0aab4",
+    "#b6bec7",
+    "#c7ced6",
 )
-DARK_PORTRAIT_GAMMA = 0.71
-DARK_PORTRAIT_BRIGHTNESS = 1.22
-DARK_PORTRAIT_BACKGROUND_OPACITY = 0.54
-DARK_PORTRAIT_SUBJECT_OPACITY_FLOOR = 0.88
-DARK_PORTRAIT_FEATURE_OPACITY = 0.99
-DARK_PORTRAIT_FEATURE_MIDTONE_LIFT = 0.16
-DARK_PORTRAIT_FEATURE_CONTRAST = 0.24
-DARK_PORTRAIT_HAIR_DARK_OPACITY_CAP = 0.68
+DARK_PORTRAIT_GAMMA = 0.70
+DARK_PORTRAIT_BRIGHTNESS = 1.30
+DARK_PORTRAIT_MIN_OPACITY = 0.86
+DARK_PORTRAIT_MAX_OPACITY = 0.99
 DARK_BACKGROUND_UNIFORMITY_THRESHOLD = 0.80
 DARK_BACKGROUND_WINDOW_RADIUS = 2
-DARK_NOISE_SUPPORT_THRESHOLD = 5
-DARK_SUBJECT_REGION = (165, 82, 125, 105)
-DARK_HAIR_REGION = (128, 28, 78, 31)
-DARK_FEATURE_REGIONS = (
-    (153, 64, 52, 12),  # eyebrow and eye band
-    (193, 83, 30, 23),  # nose bridge and nostrils
-    (190, 101, 38, 11),  # lips and mouth
-    (155, 119, 70, 27),  # beard boundary and jaw
-    (80, 92, 28, 25),  # ear
-)
 
 
 @dataclass(frozen=True)
@@ -72,12 +74,8 @@ class Theme:
     portrait_palette: tuple[str, ...] | None = None
     portrait_gamma: float = 1.0
     portrait_brightness: float = 1.0
-    portrait_background_opacity: float = 1.0
-    portrait_subject_opacity_floor: float = 1.0
-    portrait_feature_opacity: float = 1.0
-    portrait_feature_midtone_lift: float = 0.0
-    portrait_feature_contrast: float = 0.0
-    portrait_noise_reduction: bool = False
+    portrait_min_opacity: float = 1.0
+    portrait_max_opacity: float = 1.0
     background_uniformity_threshold: float = 1.0
 
 
@@ -108,34 +106,30 @@ THEMES = (
         portrait_palette=DARK_PORTRAIT_PALETTE,
         portrait_gamma=DARK_PORTRAIT_GAMMA,
         portrait_brightness=DARK_PORTRAIT_BRIGHTNESS,
-        portrait_background_opacity=DARK_PORTRAIT_BACKGROUND_OPACITY,
-        portrait_subject_opacity_floor=DARK_PORTRAIT_SUBJECT_OPACITY_FLOOR,
-        portrait_feature_opacity=DARK_PORTRAIT_FEATURE_OPACITY,
-        portrait_feature_midtone_lift=DARK_PORTRAIT_FEATURE_MIDTONE_LIFT,
-        portrait_feature_contrast=DARK_PORTRAIT_FEATURE_CONTRAST,
-        portrait_noise_reduction=True,
+        portrait_min_opacity=DARK_PORTRAIT_MIN_OPACITY,
+        portrait_max_opacity=DARK_PORTRAIT_MAX_OPACITY,
         background_uniformity_threshold=DARK_BACKGROUND_UNIFORMITY_THRESHOLD,
     ),
 )
 
 
-PANEL_LINES = (
-    ("prompt", 78, "$ whoami", ""),
-    ("entry", 120, "role", "Software Engineer"),
-    ("entry", 148, "interests", "Machine Learning, Data Analysis,"),
-    ("continuation", 175, "", "Software Technology, Operating Systems, Security"),
-    ("section", 228, "technical", ""),
-    ("entry", 270, "code", "Python, SQL, C, C++, Java"),
-    ("entry", 297, "tools", "Pandas, Jupyter, Anaconda, NetworkX"),
-    ("academic", 350, "academic", ""),
-    ("entry", 392, "degree", "Computer Science Engineering & Informatics"),
-    ("entry", 419, "university", "University of Ioannina"),
-    ("entry", 446, "thesis", "Hallucination Detection in Large Language Models"),
-    ("entry", 473, "benchmarks", "SHROOM, SemEval"),
-    ("section", 526, "languages", ""),
-    ("entry", 568, "spoken", "Greek (Native), English (B2), French (A2)"),
-    ("section", 621, "web", ""),
-    ("entry", 663, "portfolio", "spyroskontakis.github.io"),
+PANEL_ITEMS = (
+    ("prompt", "$ whoami", "", 46),
+    ("entry", "role", "Software Engineer", 34),
+    ("entry", "interests", "Machine Learning, Data Analysis,", 34),
+    ("continuation", "", "Software Technology, Operating Systems, Security", 52),
+    ("section", "technical", "", 46),
+    ("entry", "code", "Python, SQL, C, C++, Java", 34),
+    ("entry", "tools", "Pandas, Jupyter, Anaconda, NetworkX", 52),
+    ("academic", "academic", "", 46),
+    ("entry", "degree", "Computer Science Engineering & Informatics", 34),
+    ("entry", "university", "University of Ioannina", 34),
+    ("entry", "thesis", "Hallucination Detection in Large Language Models", 34),
+    ("entry", "benchmarks", "SHROOM, SemEval", 52),
+    ("section", "languages", "", 46),
+    ("entry", "spoken", "Greek (Native), English (B2), French (A2)", 52),
+    ("section", "web", "", 46),
+    ("entry", "portfolio", "spyroskontakis.github.io", 0),
 )
 
 
@@ -179,33 +173,6 @@ def background_mask(rows: list[str], threshold: float) -> set[tuple[int, int]]:
     return background
 
 
-def region_distance(x: int, y: int, region: tuple[int, int, int, int]) -> float:
-    center_x, center_y, radius_x, radius_y = region
-    return hypot((x - center_x) / radius_x, (y - center_y) / radius_y)
-
-
-def feature_weight(x: int, y: int) -> float:
-    return max(
-        (max(0.0, 1.0 - region_distance(x, y, region)) for region in DARK_FEATURE_REGIONS),
-        default=0.0,
-    )
-
-
-def subject_opacity(x: int, y: int, feature: float, theme: Theme) -> float:
-    subject_distance = region_distance(x, y, DARK_SUBJECT_REGION)
-    if subject_distance <= 1.0:
-        center_weight = 1.0 - subject_distance
-        opacity = theme.portrait_subject_opacity_floor + 0.06 * center_weight
-    else:
-        opacity = theme.portrait_background_opacity
-    if feature > 0:
-        feature_opacity = theme.portrait_subject_opacity_floor + (
-            theme.portrait_feature_opacity - theme.portrait_subject_opacity_floor
-        ) * (0.55 + 0.45 * feature)
-        opacity = max(opacity, feature_opacity)
-    return min(theme.portrait_feature_opacity, opacity)
-
-
 def interpolate_palette(palette: tuple[str, ...], tone: float) -> str:
     position = max(0.0, min(1.0, tone)) * (len(palette) - 1)
     lower = int(position)
@@ -217,32 +184,7 @@ def interpolate_palette(palette: tuple[str, ...], tone: float) -> str:
     return "#" + "".join(f"{channel:02x}" for channel in mixed)
 
 
-def local_dark_support(rows: list[str], x: int, y: int) -> int:
-    height = len(rows)
-    width = len(rows[0])
-    return sum(
-        rows[ny][nx] in "@%#*"
-        for ny in range(max(0, y - 1), min(height, y + 2))
-        for nx in range(max(0, x - 1), min(width, x + 2))
-        if (nx, ny) != (x, y)
-    )
-
-
-def suppress_dark_noise(rows: list[str], x: int, y: int, source_tone: float) -> bool:
-    if source_tone > 0.375 or feature_weight(x, y) > 0:
-        return False
-    support = local_dark_support(rows, x, y)
-    outside_subject = region_distance(x, y, DARK_SUBJECT_REGION) > 1.0
-    in_hair = region_distance(x, y, DARK_HAIR_REGION) <= 1.0
-    if outside_subject:
-        return support < DARK_NOISE_SUPPORT_THRESHOLD
-    if in_hair and source_tone <= 0.25:
-        return support < DARK_NOISE_SUPPORT_THRESHOLD + 2
-    return False
-
-
 def dark_tone_runs(
-    rows: list[str],
     row: str,
     y: int,
     theme: Theme,
@@ -256,28 +198,14 @@ def dark_tone_runs(
             styles.append("fill:transparent")
             continue
         source_tone = visible_ramp.index(character) / (len(visible_ramp) - 1)
-        if theme.portrait_noise_reduction and suppress_dark_noise(rows, x, y, source_tone):
-            styles.append("fill:transparent")
-            continue
         corrected = min(
             1.0,
             (source_tone**theme.portrait_gamma) * theme.portrait_brightness,
         )
-        feature = feature_weight(x, y)
-        midtone_kernel = 4.0 * corrected * (1.0 - corrected)
-        corrected += feature * theme.portrait_feature_midtone_lift * midtone_kernel
-        corrected = 0.5 + (corrected - 0.5) * (
-            1.0 + feature * theme.portrait_feature_contrast
-        )
-        corrected = max(0.0, min(1.0, corrected))
         color = interpolate_palette(theme.portrait_palette, corrected)
-        opacity = subject_opacity(x, y, feature, theme)
-        if (
-            region_distance(x, y, DARK_HAIR_REGION) <= 1.0
-            and source_tone <= 0.25
-            and feature == 0
-        ):
-            opacity = min(opacity, DARK_PORTRAIT_HAIR_DARK_OPACITY_CAP)
+        opacity = theme.portrait_min_opacity + (
+            theme.portrait_max_opacity - theme.portrait_min_opacity
+        ) * corrected
         styles.append(f"fill:{color};fill-opacity:{opacity:.2f}")
 
     runs: list[str] = []
@@ -304,7 +232,7 @@ def portrait_markup(rows: list[str], theme: Theme) -> str:
     for index, row in enumerate(rows):
         y = 8 + index * 7.5
         content = (
-            dark_tone_runs(rows, row, index, theme, background)
+            dark_tone_runs(row, index, theme, background)
             if theme.portrait_palette
             else escape(row)
         )
@@ -314,7 +242,8 @@ def portrait_markup(rows: list[str], theme: Theme) -> str:
 
 def panel_markup() -> str:
     lines: list[str] = []
-    for kind, y, label, value in PANEL_LINES:
+    y = PANEL_TOP
+    for kind, label, value, advance in PANEL_ITEMS:
         if kind == "prompt":
             lines.append(f'      <text class="heading prompt" x="0" y="{y}">{label}</text>')
         elif kind in {"section", "academic"}:
@@ -323,15 +252,16 @@ def panel_markup() -> str:
                 f'      <text class="{class_name}" x="0" y="{y}">&gt; {label}</text>'
             )
         elif kind == "continuation":
-            lines.append(f'      <text class="value" x="148" y="{y}">{escape(value)}</text>')
+            lines.append(f'      <text class="value" x="{VALUE_X}" y="{y}">{escape(value)}</text>')
         else:
             lines.extend(
                 (
                     f'      <text class="label" x="0" y="{y}">{label}</text>',
-                    f'      <text class="punctuation" x="120" y="{y}">:</text>',
-                    f'      <text class="value" x="148" y="{y}">{escape(value)}</text>',
+                    f'      <text class="punctuation" x="{LABEL_SEPARATOR_X}" y="{y}">:</text>',
+                    f'      <text class="value" x="{VALUE_X}" y="{y}">{escape(value)}</text>',
                 )
             )
+        y += advance
     return "\n".join(lines)
 
 
@@ -358,14 +288,13 @@ def render_svg(rows: list[str], theme: Theme) -> str:
     .prompt {{ fill: {theme.green}; }}
     .section {{ fill: {theme.blue}; }}
     .academic {{ fill: {theme.orange}; }}
-    .label, .punctuation {{ fill: {theme.secondary_text}; }}
-    .value {{ fill: {theme.main_text}; }}
+    .label, .punctuation {{ fill: {theme.secondary_text}; font-size: {LABEL_FONT_SIZE}px; }}
+    .value {{ fill: {theme.main_text}; font-weight: 600; }}
   </style>
 {portrait_filter_definition}  <rect width="{CARD_WIDTH}" height="{CARD_HEIGHT}" rx="18" fill="{theme.background}"/>
-  <rect x="14" y="14" width="1472" height="672" rx="14" fill="{theme.surface}"/>
-  <rect x="1" y="1" width="1498" height="698" rx="17" fill="none" stroke="{theme.border}" stroke-width="2"/>
-  <line x1="{DIVIDER_X}" y1="36" x2="{DIVIDER_X}" y2="664" stroke="{theme.border}" stroke-width="2"/>
-  <g aria-label="ASCII portrait"{portrait_filter_attribute} transform="translate(34 28) scale(0.315 0.525)">
+  <rect x="{INNER_MARGIN}" y="{INNER_MARGIN}" width="{CARD_WIDTH - 2 * INNER_MARGIN}" height="{CARD_HEIGHT - 2 * INNER_MARGIN}" rx="14" fill="{theme.surface}"/>
+  <rect x="1" y="1" width="{CARD_WIDTH - 2}" height="{CARD_HEIGHT - 2}" rx="17" fill="none" stroke="{theme.border}" stroke-width="2"/>
+  <g aria-label="ASCII portrait"{portrait_filter_attribute} transform="translate({PORTRAIT_X} {PORTRAIT_Y}) scale({PORTRAIT_SCALE_X} {PORTRAIT_SCALE_Y})">
     <text class="portrait" xml:space="preserve">
 {portrait_markup(rows, theme)}
     </text>
